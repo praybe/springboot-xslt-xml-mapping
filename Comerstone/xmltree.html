@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>HTML 5 Boilerplate</title>
+      <!-- load the theme CSS file -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.2.1/themes/default/style.min.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.1/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jstree/3.2.1/jstree.min.js"></script>
+    <script src="https://goessner.net/download/prj/jsonxml/xml2json.js"></script>
+    <style>
+        .grid-layout {
+          background-color: steelblue;
+          padding: 5px;
+          display: grid;
+          grid-gap: 5px;
+          grid-template-areas:
+            'header header header header header header'
+            'src_code src_code main main dst_code dst_code'
+            'src_tree src_tree main main dst_tree dst_tree'
+            'footer footer footer footer footer footer';
+        }
+        
+        .grid-layout > div, .grid-layout > canvas {
+          background-color: aliceblue;
+        /*
+          padding: 20px;
+          text-align: center;
+          font-size: 18px;
+          */
+        }
+        
+        #jstree-dnd .jstree-er {
+            background: green;
+        }
+        #jstree-dnd .jstree-copy {
+            margin: 0 2px 0 0;
+        }
+        #jstree-dnd.jstree-default .jstree-er {
+            background-position: -4px -68px;
+        }
+
+        textarea {
+          width: 100%;
+          height: 100%;
+          resize: none;
+        }
+        path {
+          animation: move 0.8s linear; 
+          animation-fill-mode: forwards;
+          stroke: blue;
+          stroke-width: 4;
+          fill: none;
+          stroke-dasharray: 1353px;
+          stroke-dashoffset: 1353px;
+
+          z-index:9999;
+        }
+        path:hover:not(.selectedPath) {
+          opacity: 0.3;
+        }
+        @keyframes move {
+            100% {
+                stroke-dashoffset: 0;
+            }
+        }
+        #svg, #main {
+          overflow: visible;
+          z-index: 999;
+        }
+        .selectedPath {
+          z-index:99999;
+          stroke: red;
+        }
+      </style>
+  </head>
+  <body>
+    <div class="grid-layout">
+        <div style="grid-area: header">Header</div>
+        <div style="grid-area: src_code">
+          <textarea
+            id="notepad"
+            placeholder="drag and drop your src.xml file"
+          ></textarea>
+        </div>
+
+        <div style="grid-area: src_tree" id="jstree">
+            <ul>
+                <li>Root node 1
+                  <ul>
+                    <li id="child_node_1">Child node 1</li>
+                    <li>Child node 2</li>
+                  </ul>
+                </li>
+                <li>Root node 2</li>
+              </ul>
+        </div>
+
+        <div style="grid-area: main;" id="main">
+          <svg id="svg"></svg>
+        </div>
+        <div style="grid-area: dst_code">
+          <textarea
+          id="notepad2"
+          placeholder="drag and drop your dst.xml file"
+        ></textarea>
+        </div>
+
+        <div style="grid-area: dst_tree; direction:rtl" id="jstree2">
+            <ul>
+                <li>Root node 1</li>
+            </ul>
+        </div>
+        <div style="grid-area: footer" id="footer">Footer</div>
+    </div>  
+
+    <button id="button">demo button</button>
+      <script>
+      
+      $(function () {
+        $.jstree.plugins.myplugin = function (options, parent) {
+
+          // Blocks DND on an other tree than the original one
+          this.check = function (chk, obj, par, pos, more) {
+              if(parent.check.call(this, chk, obj, par, pos, more) === false) {
+                return false;
+              }
+              if (more && more.dnd && more.is_multi) {
+                return false
+              }
+              return true;
+          };
+        };
+        // create an instance when the DOM is ready (left)
+        $('#jstree').jstree({
+            "core": {
+                // so that create works
+                "check_callback" : true,
+            },
+            "dnd" : {
+                "drop_target" : false
+            },
+            //dnd: drag and drop tree nodes and rearrange the tree
+            //contextmenu: right click nodes and shows a list of configurable actions in a menu
+            //myplugin: 
+            "plugins": ["dnd", "contextmenu", "myplugin"]
+        });
+        
+         // create an instance when the DOM is ready (right)
+        $('#jstree2').jstree({
+            "core": {
+                "check_callback" : true
+            },
+            "dnd" : {
+                "drop_target" : false
+            },
+            "plugins": ["contextmenu", "myplugin"]
+        });
+        
+        class Mapping {
+          constructor(fromId, toId) {
+            this.fromId = fromId;
+            this.toId = toId;
+          }
+        }
+        let mappingArray = [];
+
+        $(document).on("dnd_stop.vakata", function (e, data) {
+          let target = $(data.event.target);
+          if(!target.closest('.jstree').length) {
+
+          } else {
+            const start = $(data.element);
+            const end = $(data.event.target)
+            addMapping(start, end);
+          }
+
+        });
+        drawPath = (start, end) => {
+          const startX = start.offset().left + start.outerWidth();
+          const startY = start.offset().top + start.outerHeight() / 2;
+
+          const middleStartX = $('#main').offset().left;
+          const middleEndX = $('#main').offset().left + $('#main').outerWidth();
+
+          const endX = end.offset().left;
+          const endY = end.offset().top + end.outerHeight() / 2;
+
+          let path = document.createElementNS('http://www.w3.org/2000/svg', "path");
+
+          path.setAttributeNS(null,"d","M" + 0 + "," + 0
+                                    + " L" + (middleStartX-startX) + "," + 0
+                                    + " L" + ((middleStartX-startX)+(middleEndX-middleStartX)) + "," + (endY-startY)
+                                    + " L" + (endX-startX) + "," + (endY-startY)
+                                    );
+
+          
+          path.setAttributeNS(null, "transform", 'translate(' + -(middleStartX-startX) + ', ' + (startY - $('#svg').offset().top) + ')');
+
+          $(path).click(function(e) {
+            e.stopPropagation();
+            $(this).toggleClass("selectedPath");
+          })
+
+          $('#svg').append(path);
+        }
+        $(document).click((event) => {
+            if (!$(event.target).closest("path").length) {
+              // the click occured outside paths (clicked elsewhere)
+              $(".selectedPath").removeClass("selectedPath");
+            }        
+        });
+        addMapping = (start, end) => {
+          drawPath(start, end);
+
+          const mapping = new Mapping(start.parent().attr("id"), end.parent().attr("id"));
+          mappingArray.push(mapping);
+          
+          //mappingArray.forEach((mapping) => {
+          //  console.log(mapping.fromId, mapping.toId);
+          //})
+        }
+        re_render = () => {
+          $("#svg").empty();
+          mappingArray.forEach((mapping) => {
+            let { fromId, toId } = mapping;
+
+            //check parents are open/closed
+            while($('#jstree').jstree().get_node(fromId).parent !== '#'
+              && $('#jstree').jstree().get_node($('#jstree').jstree().get_node(fromId).parent).state['opened'] === false) {
+              fromId = $('#jstree').jstree().get_node(fromId).parent;
+            }
+
+            while($('#jstree2').jstree().get_node(toId).parent !== '#'
+              && $('#jstree2').jstree().get_node($('#jstree2').jstree().get_node(toId).parent).state['opened'] === false) {
+              toId = $('#jstree2').jstree().get_node(toId).parent;
+            }
+
+            const fromIdForJQuery = $('#jstree').jstree().get_node(fromId).a_attr.id;
+            const toIdForJQuery = $('#jstree2').jstree().get_node(toId).a_attr.id;
+
+            const from = $(document.getElementById(fromIdForJQuery));
+            const to = $(document.getElementById(toIdForJQuery))
+            //console.log(from.parent().parent().parent());
+            drawPath(from, to);
+          })
+        }
+
+        
+
+
+
+
+        $('#jstree, #jstree2').on("move_node.jstree", function (e, data) {
+            console.log(data);
+            console.log(data.node.text + " from: " + data.node.id + " to: " + data.parent);
+            return false;
+        });
+        
+        // 7 bind to events triggered on the tree
+        $('#jstree').on("select_node.jstree", function (e, data) {
+          if(data.node.data && Object.keys(data.node.data).length !== 0)
+            $('#footer').html(data.node.text + ": " + data.node.data);
+          else
+            $('#footer').html(data.node.text);
+        });
+
+        $('#jstree').on("changed.jstree", function (e, data) {
+          console.log(data.action);
+        });
+        $('#jstree').on("open_node.jstree", function (e, data) {
+          console.log(data);
+        });
+        $('#jstree').on("set_text.jstree", function (e, data) {
+          console.log(data);
+        });
+        $('#jstree').on("rename_node.jstree", function (e, data) {
+          console.log(data);
+        });
+        
+        
+        
+        
+        function traverse(tree) {
+          if(tree.hasChildNodes()) {
+            //document.write('<ul><li>');
+            //document.write('<b>'+tree.tagName+' : </b>');
+            console.log(tree.tagName);
+            for(var i=0; i<tree.childNodes.length; i++)
+              traverse(tree.childNodes[i]);
+            //document.write('</li></ul>');
+          }
+          else {
+            //leaf node
+            //console.log(tree.parentNode.tagName, tree);
+            //console.log(tree)
+          }
+        }
+
+        
+        let idNumber = 0;
+        let currentTreeIdForFileDrop = "j1_";
+
+
+        function xml2jsonForJSTree(tree) {
+          let json = {};
+          
+          json['id'] = currentTreeIdForFileDrop + ++idNumber;
+          json['text'] = tree.tagName;
+          json['state'] = {
+              opened: true,
+              disabled: false,
+              selected: false,
+          };
+          json['children'] = [];
+          //console.log(tree.tagName, tree.data);
+          if(tree.hasChildNodes()) {
+            for(var i=0; i<tree.childNodes.length; i++) {
+              //console.log(tree.childNodes[i].tagName, tree.childNodes[i].data);
+              // 의미없는 빈 문자열 태그들 삭제
+              if(tree.childNodes[i].data && !tree.childNodes[i].data.trim())
+                tree.removeChild(tree.childNodes[i]);
+              // 텍스트 노드 부모에 옮기고 삭제
+              if(tree.childNodes[i] && !tree.childNodes[i].hasChildNodes() && tree.childNodes[i].data && tree.childNodes[i].data.trim()) {
+                json['data'] = tree.childNodes[i].data;
+                tree.removeChild(tree.childNodes[i]);
+              }
+
+            }
+            for(var i=0; i<tree.childNodes.length; i++)
+              json['children'][i] = xml2jsonForJSTree(tree.childNodes[i]);
+          }
+          //Leaf node 중 텍스트 노드인 경우 (필요없는 코드)
+          else {
+            if(tree.data && tree.data.trim()) {
+              json['text'] = 'text()';
+              json['data'] = tree.data;
+              //console.log(tree);
+            }
+          }
+          return json;
+        }
+        populateJSTreeWithXML = (selector, xmlText) => {
+          var xml = (new DOMParser()).parseFromString(xmlText,'text/xml');
+          //traverse(xml.documentElement);
+          //let json = JSON.parse(xml2json(xml.documentElement, "\t"));
+          idNumber = 0;
+          let json = xml2jsonForJSTree(xml.documentElement);
+          //console.log(json);
+
+          $(selector).jstree(true).settings.core.data = json;
+          $(selector).jstree(true).refresh();
+        }
+          
+        
+        
+        function dropfile(note, file) {
+          var reader = new FileReader();
+          reader.onload = function(e) {
+            note.value = e.target.result;
+          };
+          reader.onloadend = function(e) {
+            const xmlText = note.value
+            if(note.id == "notepad")  {
+              populateJSTreeWithXML("#jstree", xmlText);
+            } else {
+              populateJSTreeWithXML("#jstree2", xmlText);
+            }
+          }
+          reader.readAsText(file, "UTF-8");
+        }
+
+        notepad.ondrop = function(e) {
+          e.preventDefault();
+          var file = e.dataTransfer.files[0];
+          currentTreeIdForFileDrop = "j1_";
+          dropfile(this, file);
+        };
+        notepad2.ondrop = function(e) {
+          e.preventDefault();
+          var file = e.dataTransfer.files[0];
+          currentTreeIdForFileDrop = "j2_";
+          dropfile(this, file);
+        };
+      });
+
+
+      $('#button').on('click', function () {
+        /*
+          $('#jstree').jstree(true).select_node('child_node_1');
+          $('#jstree').jstree('select_node', 'child_node_1');
+          $.jstree.reference('#jstree').select_node('child_node_1');
+        */
+       //alert("re-rendering");
+       re_render();
+      });
+
+      </script>
+  </body>
+</html>
